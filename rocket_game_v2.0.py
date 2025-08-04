@@ -6,6 +6,7 @@ from rocket_simulation import RocketSimulation, ENGINES
 
 # Initialize Pygame
 pygame.init()
+pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
 
 # Constants
 SCREEN_WIDTH = 1200
@@ -28,6 +29,254 @@ PURPLE = (128, 0, 128)
 LIME_GREEN = (50, 205, 50)
 SILVER = (192, 192, 192)
 GOLD = (255, 215, 0)
+
+class SoundManager:
+    def __init__(self):
+        self.sounds_enabled = True
+        self.music_enabled = False  # Disabled background music
+        self.volume = 0.7
+        self.current_music = None
+        
+        # Create synthesized sound effects
+        self.create_sound_effects()
+        
+    def create_sound_effects(self):
+        """Create synthesized sound effects using pygame"""
+        import numpy as np
+        
+        # Rocket launch sound (whoosh with engine roar)
+        duration = 2.0
+        sample_rate = 22050
+        frames = int(duration * sample_rate)
+        
+        # Create rocket launch sound
+        arr = np.zeros((frames, 2))
+        for i in range(frames):
+            t = float(i) / sample_rate
+            # White noise for engine roar
+            noise = np.random.uniform(-0.3, 0.3)
+            # Low frequency rumble
+            rumble = 0.4 * np.sin(2 * np.pi * 80 * t) * np.exp(-t * 0.5)
+            # High frequency whoosh
+            whoosh = 0.2 * np.sin(2 * np.pi * 400 * t) * np.exp(-t * 2.0)
+            
+            sound = noise + rumble + whoosh
+            arr[i] = [sound, sound]
+        
+        # Convert to pygame sound
+        arr = (arr * 32767).astype(np.int16)
+        self.rocket_launch = pygame.sndarray.make_sound(arr)
+        
+        # Countdown beep
+        frames = int(0.3 * sample_rate)
+        arr = np.zeros((frames, 2))
+        for i in range(frames):
+            t = float(i) / sample_rate
+            beep = 0.3 * np.sin(2 * np.pi * 800 * t) * np.exp(-t * 8)
+            arr[i] = [beep, beep]
+        arr = (arr * 32767).astype(np.int16)
+        self.countdown_beep = pygame.sndarray.make_sound(arr)
+        
+        # Collection sound (crystal/energy pickup)
+        frames = int(0.5 * sample_rate)
+        arr = np.zeros((frames, 2))
+        for i in range(frames):
+            t = float(i) / sample_rate
+            ding = 0.4 * np.sin(2 * np.pi * 1200 * t) * np.exp(-t * 4)
+            ding += 0.2 * np.sin(2 * np.pi * 1600 * t) * np.exp(-t * 6)
+            arr[i] = [ding, ding]
+        arr = (arr * 32767).astype(np.int16)
+        self.collect_sound = pygame.sndarray.make_sound(arr)
+        
+        # Time travel sound (magical whoosh)
+        frames = int(1.5 * sample_rate)
+        arr = np.zeros((frames, 2))
+        for i in range(frames):
+            t = float(i) / sample_rate
+            freq = 200 + 800 * t  # Rising frequency
+            magic = 0.3 * np.sin(2 * np.pi * freq * t) * (1 - t/1.5)
+            # Add some reverb-like effect
+            if i > 1000:
+                magic += 0.1 * arr[i-1000][0]
+            arr[i] = [magic, magic]
+        arr = (arr * 32767).astype(np.int16)
+        self.time_travel_sound = pygame.sndarray.make_sound(arr)
+        
+        # Baseball hit sound
+        frames = int(0.2 * sample_rate)
+        arr = np.zeros((frames, 2))
+        for i in range(frames):
+            t = float(i) / sample_rate
+            # Sharp crack sound
+            crack = 0.5 * np.random.uniform(-1, 1) * np.exp(-t * 15)
+            arr[i] = [crack, crack]
+        arr = (arr * 32767).astype(np.int16)
+        self.baseball_hit = pygame.sndarray.make_sound(arr)
+        
+        # Parachute deploy sound
+        frames = int(0.8 * sample_rate)
+        arr = np.zeros((frames, 2))
+        for i in range(frames):
+            t = float(i) / sample_rate
+            # Soft whoosh
+            whoosh = 0.2 * np.sin(2 * np.pi * 120 * t) * np.exp(-t * 2)
+            arr[i] = [whoosh, whoosh]
+        arr = (arr * 32767).astype(np.int16)
+        self.parachute_deploy = pygame.sndarray.make_sound(arr)
+        
+        # Game over sound (dramatic downward spiral)
+        frames = int(2.0 * sample_rate)
+        arr = np.zeros((frames, 2))
+        for i in range(frames):
+            t = float(i) / sample_rate
+            freq = 400 * np.exp(-t * 2)  # Falling frequency
+            drama = 0.4 * np.sin(2 * np.pi * freq * t) * (1 - t/2.0)
+            # Add some dissonance
+            drama += 0.2 * np.sin(2 * np.pi * freq * 0.7 * t) * (1 - t/2.0)
+            arr[i] = [drama, drama]
+        arr = (arr * 32767).astype(np.int16)
+        self.game_over_sound = pygame.sndarray.make_sound(arr)
+        
+        # Menu click sound
+        frames = int(0.1 * sample_rate)
+        arr = np.zeros((frames, 2))
+        for i in range(frames):
+            t = float(i) / sample_rate
+            click = 0.3 * np.sin(2 * np.pi * 600 * t) * np.exp(-t * 20)
+            arr[i] = [click, click]
+        arr = (arr * 32767).astype(np.int16)
+        self.menu_click = pygame.sndarray.make_sound(arr)
+        
+        # Wind ambient sound
+        frames = int(3.0 * sample_rate)
+        arr = np.zeros((frames, 2))
+        for i in range(frames):
+            t = float(i) / sample_rate
+            # Soft wind noise
+            wind = 0.1 * np.random.uniform(-1, 1) * np.sin(2 * np.pi * 0.5 * t)
+            arr[i] = [wind, wind]
+        arr = (arr * 32767).astype(np.int16)
+        self.wind_ambient = pygame.sndarray.make_sound(arr)
+        
+        # Dinosaur roar
+        frames = int(1.5 * sample_rate)
+        arr = np.zeros((frames, 2))
+        for i in range(frames):
+            t = float(i) / sample_rate
+            # Deep roar with harmonics
+            roar = 0.4 * np.sin(2 * np.pi * 120 * t) * np.exp(-t * 0.8)
+            roar += 0.2 * np.sin(2 * np.pi * 240 * t) * np.exp(-t * 1.2)
+            roar += 0.1 * np.random.uniform(-0.5, 0.5)  # Add growl texture
+            arr[i] = [roar, roar]
+        arr = (arr * 32767).astype(np.int16)
+        self.dinosaur_roar = pygame.sndarray.make_sound(arr)
+        
+        # Robot beep
+        frames = int(0.4 * sample_rate)
+        arr = np.zeros((frames, 2))
+        for i in range(frames):
+            t = float(i) / sample_rate
+            # Electronic beeping
+            beep = 0.3 * np.sin(2 * np.pi * 880 * t) * np.exp(-t * 5)
+            beep += 0.2 * np.sin(2 * np.pi * 1760 * t) * np.exp(-t * 8)
+            arr[i] = [beep, beep]
+        arr = (arr * 32767).astype(np.int16)
+        self.robot_beep = pygame.sndarray.make_sound(arr)
+        
+    def play_sound(self, sound_name):
+        """Play a sound effect"""
+        if not self.sounds_enabled:
+            return
+            
+        try:
+            sound = getattr(self, sound_name)
+            sound.set_volume(self.volume)
+            sound.play()
+        except AttributeError:
+            pass  # Sound doesn't exist
+    
+    def create_background_music(self, music_type, duration=30.0):
+        """Create looping background music"""
+        import numpy as np
+        
+        sample_rate = 22050
+        frames = int(duration * sample_rate)
+        arr = np.zeros((frames, 2))
+        
+        if music_type == "menu":
+            # Peaceful ambient menu music
+            for i in range(frames):
+                t = float(i) / sample_rate
+                # Soft pad chords
+                chord = 0.1 * np.sin(2 * np.pi * 220 * t)  # A3
+                chord += 0.08 * np.sin(2 * np.pi * 277.18 * t)  # C#4
+                chord += 0.06 * np.sin(2 * np.pi * 329.63 * t)  # E4
+                # Add some subtle movement
+                chord *= (1 + 0.2 * np.sin(2 * np.pi * 0.1 * t))
+                arr[i] = [chord, chord]
+                
+        elif music_type == "flight":
+            # Exciting flight music
+            for i in range(frames):
+                t = float(i) / sample_rate
+                # Driving bassline
+                bass = 0.15 * np.sin(2 * np.pi * 110 * t)  # A2
+                # Exciting melody
+                melody_freq = 440 + 100 * np.sin(2 * np.pi * 0.5 * t)
+                melody = 0.1 * np.sin(2 * np.pi * melody_freq * t)
+                # Add some percussion-like hits
+                if int(t * 4) % 4 == 0:  # Every beat
+                    percussion = 0.05 * np.exp(-(t % 0.25) * 20)
+                else:
+                    percussion = 0
+                music = bass + melody + percussion
+                arr[i] = [music, music]
+                
+        elif music_type == "time_travel":
+            # Mystical time travel ambient
+            for i in range(frames):
+                t = float(i) / sample_rate
+                # Ethereal pads with modulation
+                pad1 = 0.08 * np.sin(2 * np.pi * 333 * t) * (1 + 0.3 * np.sin(2 * np.pi * 0.3 * t))
+                pad2 = 0.06 * np.sin(2 * np.pi * 444 * t) * (1 + 0.2 * np.sin(2 * np.pi * 0.7 * t))
+                # Add some sparkle
+                sparkle = 0.04 * np.sin(2 * np.pi * 1333 * t) * np.sin(2 * np.pi * 0.1 * t)
+                music = pad1 + pad2 + sparkle
+                arr[i] = [music, music]
+        
+        # Convert to pygame sound
+        arr = (arr * 32767).astype(np.int16)
+        return pygame.sndarray.make_sound(arr)
+    
+    def play_background_music(self, music_type):
+        """Generate and play background music"""
+        if not self.music_enabled:
+            return
+            
+        # Stop current music
+        if hasattr(self, 'current_music_channel'):
+            self.current_music_channel.stop()
+            
+        # Create and play new music
+        if music_type != self.current_music:
+            music_sound = self.create_background_music(music_type)
+            music_sound.set_volume(self.volume * 0.3)  # Lower volume for background
+            self.current_music_channel = music_sound.play(loops=-1)  # Loop forever
+            self.current_music = music_type
+            
+    def toggle_sounds(self):
+        """Toggle sound effects on/off"""
+        self.sounds_enabled = not self.sounds_enabled
+        
+    def toggle_music(self):
+        """Toggle background music on/off"""
+        self.music_enabled = not self.music_enabled
+        if not self.music_enabled:
+            pygame.mixer.music.stop()
+    
+    def set_volume(self, volume):
+        """Set master volume (0.0 to 1.0)"""
+        self.volume = max(0.0, min(1.0, volume))
 
 class Particle:
     def __init__(self, x, y, vx, vy, life, color):
@@ -159,6 +408,9 @@ class VisualRocketGame:
         self.font = pygame.font.Font(None, 36)
         self.small_font = pygame.font.Font(None, 24)
         
+        # Initialize sound manager
+        self.sound_manager = SoundManager()
+        
         # Game state
         self.state = "menu"  # menu, countdown, flying, recovery, time_travel, results
         self.rocket_sprite = None
@@ -179,8 +431,9 @@ class VisualRocketGame:
         
         # Menu variables
         self.selected_engine = 'B'
-        self.wind_speed = 3.0  # Start with moderate wind
-        self.wind_direction = 0  # East wind (blows rocket west toward left trees)
+        # Randomize initial wind conditions for more variety
+        self.wind_speed = random.uniform(0.5, 8.0)  # Random wind 0.5-8.0 m/s
+        self.wind_direction = random.randint(0, 23) * 15  # Random direction in 15° increments
         
         # Baseball game variables
         self.baseball_angle = 45
@@ -203,6 +456,16 @@ class VisualRocketGame:
         self.player_x = 200
         self.dinosaur_x = SCREEN_WIDTH - 200
         self.robot_x = SCREEN_WIDTH - 300
+        self.dinosaur_direction = random.choice([-1, 1])  # Movement direction
+        self.dinosaur_stuck_counter = 0  # Counter to detect stuck state
+        self.dinosaur_last_x = self.dinosaur_x  # Track previous position
+        self.game_over_time = 0
+        self.is_game_over = False
+        self.player_y = SCREEN_HEIGHT - 120  # Ground level for player
+        self.jump_velocity = 0
+        self.is_jumping = False
+        self.jump_start_time = 0
+        self.jump_start_x = 0  # Starting X position for jump
         
     def draw_background(self):
         # Sky gradient
@@ -251,19 +514,45 @@ class VisualRocketGame:
         pygame.draw.arc(screen, RED, (int(x-size), int(y-size), size*2, size*2), math.pi, 2*math.pi, 2)
     
     def draw_time_machine(self, screen, x, y):
-        # Garbage can base (silver/gray cylinder)
+        # Garbage can base (silver/gray cylinder with details)
         can_width = 40
         can_height = 60
         pygame.draw.rect(screen, SILVER, (x - can_width//2, y - can_height, can_width, can_height))
         pygame.draw.ellipse(screen, GRAY, (x - can_width//2, y - can_height - 5, can_width, 10))
         
-        # Purple toilet seat on top
+        # Add vertical ridges to garbage can
+        for i in range(3):
+            ridge_x = x - can_width//2 + 8 + i * 12
+            pygame.draw.line(screen, GRAY, (ridge_x, y - can_height + 5), (ridge_x, y - 5), 1)
+        
+        # More realistic toilet seat - half blue, half red
         seat_width = 50
         seat_height = 15
-        # Outer rim
-        pygame.draw.ellipse(screen, PURPLE, (x - seat_width//2, y - can_height - 20, seat_width, seat_height))
-        # Inner hole
-        pygame.draw.ellipse(screen, BLACK, (x - 15, y - can_height - 17, 30, 9))
+        seat_thickness = 4
+        
+        # Draw outer rim in two halves
+        # Left half (blue)
+        blue_rect = pygame.Rect(x - seat_width//2, y - can_height - 20, seat_width//2, seat_height)
+        pygame.draw.ellipse(screen, BLUE, blue_rect)
+        
+        # Right half (red)  
+        red_rect = pygame.Rect(x, y - can_height - 20, seat_width//2, seat_height)
+        pygame.draw.ellipse(screen, RED, red_rect)
+        
+        # Draw the complete outer ellipse outline
+        pygame.draw.ellipse(screen, BLACK, (x - seat_width//2, y - can_height - 20, seat_width, seat_height), 2)
+        
+        # Inner hole (toilet opening)
+        inner_width = 28
+        inner_height = 8
+        pygame.draw.ellipse(screen, BLACK, (x - inner_width//2, y - can_height - 17, inner_width, inner_height))
+        
+        # Add toilet seat hinge details
+        hinge_y = y - can_height - 20
+        pygame.draw.circle(screen, SILVER, (x - 20, hinge_y), 3)
+        pygame.draw.circle(screen, SILVER, (x + 20, hinge_y), 3)
+        pygame.draw.circle(screen, BLACK, (x - 20, hinge_y), 1)
+        pygame.draw.circle(screen, BLACK, (x + 20, hinge_y), 1)
         
         # Time machine effects (swirling energy)
         if self.time_era != "present":
@@ -328,11 +617,17 @@ class VisualRocketGame:
             self.screen.blit(text, (70, 230 + i * 25))
         
         # Wind conditions
-        wind_text = self.small_font.render(f"Wind: {self.wind_speed:.1f} m/s from {self.wind_direction:.0f}°", True, BLACK)
+        wind_text = self.small_font.render(f"Wind: {self.wind_speed:.1f} m/s from {self.wind_direction:.0f}° (RANDOMIZED)", True, BLACK)
         self.screen.blit(wind_text, (50, 350))
         
-        wind_help = self.small_font.render("Press UP/DOWN: wind speed, LEFT/RIGHT: direction", True, GRAY)
+        wind_help = self.small_font.render("Press UP/DOWN: wind speed, LEFT/RIGHT: direction, W: randomize", True, GRAY)
         self.screen.blit(wind_help, (50, 375))
+        
+        # Wind strength indicator
+        wind_strength = "CALM" if self.wind_speed < 2 else "MODERATE" if self.wind_speed < 5 else "STRONG"
+        wind_color = GREEN if self.wind_speed < 2 else ORANGE if self.wind_speed < 5 else RED
+        strength_text = self.small_font.render(f"Wind Strength: {wind_strength}", True, wind_color)
+        self.screen.blit(strength_text, (50, 400))
         
         # Launch button
         launch_text = self.font.render("Press SPACE to LAUNCH!", True, RED)
@@ -343,6 +638,14 @@ class VisualRocketGame:
         time_hint = self.small_font.render("Successful missions unlock TIME TRAVEL! 🚀", True, PURPLE)
         time_rect = time_hint.get_rect(center=(SCREEN_WIDTH//2, 550))
         self.screen.blit(time_hint, time_rect)
+        
+        # Sound controls
+        sound_status = "ON" if self.sound_manager.sounds_enabled else "OFF"
+        sound_text = self.small_font.render(f"Sound Effects: {sound_status} (Press S to toggle)", True, BLACK)
+        self.screen.blit(sound_text, (50, 650))
+        
+        volume_text = self.small_font.render(f"Volume: {int(self.sound_manager.volume * 100)}% (Press -/+ to adjust)", True, BLACK)
+        self.screen.blit(volume_text, (50, 675))
         
         # Draw preview rocket
         preview_rocket = RocketSprite(SCREEN_WIDTH//2, 600)
@@ -358,6 +661,12 @@ class VisualRocketGame:
         
         if remaining > 0:
             seconds_left = int(remaining / 1000) + 1
+            
+            # Play countdown beep for each second
+            prev_second = getattr(self, '_prev_countdown_second', 0)
+            if seconds_left != prev_second and seconds_left > 0:
+                self.sound_manager.play_sound('countdown_beep')
+                self._prev_countdown_second = seconds_left
             
             # Draw countdown number or message
             if seconds_left > 0:
@@ -445,6 +754,10 @@ class VisualRocketGame:
         else:
             # BLAST OFF finished, start flight
             self.state = "flying"
+            # Play rocket launch sound when flight begins
+            if not getattr(self, '_launch_sound_played', False):
+                self.sound_manager.play_sound('rocket_launch')
+                self._launch_sound_played = True
     
     def draw_flight(self):
         self.draw_background()
@@ -492,6 +805,8 @@ class VisualRocketGame:
                 if (self.sim_time > self.simulation.engine.burn_time + self.simulation.engine.delay and
                     len(self.simulation.velocity_history) > 0 and
                     self.simulation.velocity_history[-1][1] <= 0):
+                    if not self.rocket_sprite.parachute_deployed:
+                        self.sound_manager.play_sound('parachute_deploy')
                     self.rocket_sprite.parachute_deployed = True
                 
                 self.rocket_sprite.update_particles()
@@ -723,12 +1038,19 @@ class VisualRocketGame:
         # Draw time machine
         self.draw_time_machine(self.screen, self.time_machine_x, self.time_machine_y)
         
-        # Draw player (stick figure)
-        player_y = ground_y - 20
-        pygame.draw.circle(self.screen, (255, 220, 177), (self.player_x, player_y - 10), 8)  # Head
-        pygame.draw.line(self.screen, BLACK, (self.player_x, player_y - 2), (self.player_x, player_y + 15), 3)  # Body
-        pygame.draw.line(self.screen, BLACK, (self.player_x - 8, player_y + 5), (self.player_x + 8, player_y + 5), 3)  # Arms
-        pygame.draw.line(self.screen, BLACK, (self.player_x - 5, player_y + 15), (self.player_x + 5, player_y + 15), 3)  # Legs
+        # Draw player (stick figure) with jump animation
+        player_y = self.player_y
+        pygame.draw.circle(self.screen, (255, 220, 177), (self.player_x, int(player_y - 10)), 8)  # Head
+        pygame.draw.line(self.screen, BLACK, (self.player_x, int(player_y - 2)), (self.player_x, int(player_y + 15)), 3)  # Body
+        pygame.draw.line(self.screen, BLACK, (self.player_x - 8, int(player_y + 5)), (self.player_x + 8, int(player_y + 5)), 3)  # Arms
+        
+        # Legs change based on jumping state
+        if self.is_jumping:
+            # Legs tucked up while jumping
+            pygame.draw.line(self.screen, BLACK, (self.player_x - 3, int(player_y + 12)), (self.player_x + 3, int(player_y + 12)), 3)  # Tucked legs
+        else:
+            # Normal standing legs
+            pygame.draw.line(self.screen, BLACK, (self.player_x - 5, int(player_y + 15)), (self.player_x + 5, int(player_y + 15)), 3)  # Legs
         
         # UI
         title = self.font.render("TIME TRAVEL ADVENTURE", True, WHITE if self.time_era != "present" else BLACK)
@@ -743,8 +1065,9 @@ class VisualRocketGame:
         info_texts = [
             era_text,
             f"Time Power: {self.time_power:.2f} (LEFT/RIGHT arrows)",
-            "UP/DOWN: Choose era, SPACE: Time travel",
+            "UP/DOWN: Choose era",
             f"Crystals: {self.collected_crystals}/3" if self.time_era == "past" else f"Energy: {self.collected_energy}/3" if self.time_era == "future" else "WASD: Move around",
+            "E or SPACE: Jump over creatures to avoid collision",
             "Press R to return to rocket game"
         ]
         
@@ -752,6 +1075,40 @@ class VisualRocketGame:
         for i, text in enumerate(info_texts):
             rendered = self.small_font.render(text, True, text_color)
             self.screen.blit(rendered, (50, 100 + i * 30))
+        
+        # Game over overlay
+        if self.is_game_over:
+            # Dark overlay
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+            overlay.fill(BLACK)
+            overlay.set_alpha(150)
+            self.screen.blit(overlay, (0, 0))
+            
+            # Game over text with pulsing effect
+            pulse = 1.0 + 0.3 * math.sin(pygame.time.get_ticks() * 0.01)
+            font_size = int(80 * pulse)
+            big_font = pygame.font.Font(None, font_size)
+            
+            # Determine cause of death
+            if self.time_era == "past":
+                death_cause = "EATEN BY DINOSAUR!"
+                death_color = RED
+            else:
+                death_cause = "DESTROYED BY ROBOT!"
+                death_color = BLUE
+            
+            game_over_text = big_font.render("GAME OVER", True, RED)
+            cause_text = self.font.render(death_cause, True, death_color)
+            restart_text = self.small_font.render("Press SPACEBAR to start over at rocket launch", True, WHITE)
+            
+            # Center the text
+            game_over_rect = game_over_text.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 - 50))
+            cause_rect = cause_text.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2))
+            restart_rect = restart_text.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + 80))
+            
+            self.screen.blit(game_over_text, game_over_rect)
+            self.screen.blit(cause_text, cause_rect)
+            self.screen.blit(restart_text, restart_rect)
     
     def animate_baseball_throw(self):
         # Baseball trajectory animation with hit effects
@@ -793,6 +1150,7 @@ class VisualRocketGame:
                     if distance < 20 and not hit_occurred:
                         hit_occurred = True
                         hit_time = pygame.time.get_ticks()
+                        self.sound_manager.play_sound('baseball_hit')
             
             # Show hit effects
             if hit_occurred:
@@ -824,6 +1182,10 @@ class VisualRocketGame:
         self.rocket_sprite = RocketSprite(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 100)
         self.sim_time = 0
         self.trajectory_points = []
+        
+        # Reset sound flags
+        self._launch_sound_played = False
+        self._prev_countdown_second = 0
         
         # Reset landing variables
         self.landing_position = None
@@ -932,12 +1294,16 @@ class VisualRocketGame:
                 if self.state == "menu":
                     if event.key == pygame.K_a:
                         self.selected_engine = 'A'
+                        self.sound_manager.play_sound('menu_click')
                     elif event.key == pygame.K_b:
                         self.selected_engine = 'B'
+                        self.sound_manager.play_sound('menu_click')
                     elif event.key == pygame.K_c:
                         self.selected_engine = 'C'
+                        self.sound_manager.play_sound('menu_click')
                     elif event.key == pygame.K_SPACE:
                         self.start_flight()
+                        self.sound_manager.play_sound('menu_click')
                     elif event.key == pygame.K_UP:
                         self.wind_speed = min(10, self.wind_speed + 0.5)
                     elif event.key == pygame.K_DOWN:
@@ -946,6 +1312,19 @@ class VisualRocketGame:
                         self.wind_direction = (self.wind_direction - 15) % 360
                     elif event.key == pygame.K_RIGHT:
                         self.wind_direction = (self.wind_direction + 15) % 360
+                    elif event.key == pygame.K_w:
+                        # Randomize wind conditions
+                        self.wind_speed = random.uniform(0.5, 8.0)
+                        self.wind_direction = random.randint(0, 23) * 15
+                    elif event.key == pygame.K_s:
+                        # Toggle sound effects
+                        self.sound_manager.toggle_sounds()
+                    elif event.key == pygame.K_MINUS or event.key == pygame.K_KP_MINUS:
+                        # Decrease volume
+                        self.sound_manager.set_volume(self.sound_manager.volume - 0.1)
+                    elif event.key == pygame.K_PLUS or event.key == pygame.K_KP_PLUS or event.key == pygame.K_EQUALS:
+                        # Increase volume
+                        self.sound_manager.set_volume(self.sound_manager.volume + 0.1)
                     elif event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
                         return False  # Quit game
                 
@@ -962,37 +1341,56 @@ class VisualRocketGame:
                         self.throw_baseball()
                 
                 elif self.state == "time_travel":
-                    if event.key == pygame.K_UP:
-                        if self.time_era == "present":
-                            self.time_era = "past"
-                        elif self.time_era == "future":
-                            self.time_era = "present"
-                    elif event.key == pygame.K_DOWN:
-                        if self.time_era == "present":
-                            self.time_era = "future"
-                        elif self.time_era == "past":
-                            self.time_era = "present"
-                    elif event.key == pygame.K_LEFT:
-                        self.time_power = max(0.1, self.time_power - 0.1)
-                    elif event.key == pygame.K_RIGHT:
-                        self.time_power = min(1.0, self.time_power + 0.1)
-                    elif event.key == pygame.K_SPACE:
-                        # Time travel activation
-                        pass  # Visual effect, era already changed
-                    elif event.key == pygame.K_w:
-                        self.player_x = max(50, self.player_x - 10)
-                    elif event.key == pygame.K_s:
-                        self.player_x = min(SCREEN_WIDTH - 50, self.player_x + 10)
-                    elif event.key == pygame.K_a:
-                        self.player_x = max(50, self.player_x - 10)
-                    elif event.key == pygame.K_d:
-                        self.player_x = min(SCREEN_WIDTH - 50, self.player_x + 10)
-                    elif event.key == pygame.K_r:
-                        self.state = "results"
+                    if self.is_game_over:
+                        # Only allow restart when game over
+                        if event.key == pygame.K_SPACE:
+                            # Restart entire game to menu
+                            self.restart_game()
+                            self.sound_manager.play_sound('menu_click')
+                    else:
+                        # Normal time travel controls
+                        if event.key == pygame.K_UP:
+                            if self.time_era == "present":
+                                self.time_era = "past"
+                                self.sound_manager.play_sound('time_travel_sound')
+                            elif self.time_era == "future":
+                                self.time_era = "present"
+                                self.sound_manager.play_sound('time_travel_sound')
+                        elif event.key == pygame.K_DOWN:
+                            if self.time_era == "present":
+                                self.time_era = "future"
+                                self.sound_manager.play_sound('time_travel_sound')
+                            elif self.time_era == "past":
+                                self.time_era = "present"
+                                self.sound_manager.play_sound('time_travel_sound')
+                        elif event.key == pygame.K_LEFT:
+                            self.time_power = max(0.1, self.time_power - 0.1)
+                        elif event.key == pygame.K_RIGHT:
+                            self.time_power = min(1.0, self.time_power + 0.1)
+                        elif event.key == pygame.K_w:
+                            self.player_x = max(50, self.player_x - 10)
+                        elif event.key == pygame.K_s:
+                            self.player_x = min(SCREEN_WIDTH - 50, self.player_x + 10)
+                        elif event.key == pygame.K_a:
+                            self.player_x = max(50, self.player_x - 10)
+                        elif event.key == pygame.K_d:
+                            self.player_x = min(SCREEN_WIDTH - 50, self.player_x + 10)
+                        elif event.key == pygame.K_e or event.key == pygame.K_SPACE:
+                            # Jump key (E or SPACE)
+                            if not self.is_jumping:
+                                self.is_jumping = True
+                                self.jump_start_time = pygame.time.get_ticks()
+                                self.jump_start_x = self.player_x  # Record starting position
+                                self.sound_manager.play_sound('menu_click')  # Jump sound
+                        elif event.key == pygame.K_r:
+                            self.state = "results"
                 
                 elif self.state == "results":
                     if event.key == pygame.K_SPACE:
                         self.state = "menu"
+                        # Randomize wind for next flight
+                        self.wind_speed = random.uniform(0.5, 8.0)
+                        self.wind_direction = random.randint(0, 23) * 15
         
         return True
     
@@ -1013,6 +1411,10 @@ class VisualRocketGame:
             self.state = "results"
     
     def update_time_travel(self):
+        # Skip updates if game over
+        if self.is_game_over:
+            return
+            
         # Collection mechanics
         ground_y = SCREEN_HEIGHT - 100
         
@@ -1024,6 +1426,15 @@ class VisualRocketGame:
                     distance = abs(self.player_x - crystal_x)
                     if distance < 30:  # Close enough to collect
                         self.collected_crystals = i + 1
+                        self.sound_manager.play_sound('collect_sound')
+            
+            # Check collision with dinosaur (only if player is on ground)
+            dino_distance = abs(self.player_x - self.dinosaur_x)
+            if dino_distance < 50 and not self.is_jumping:  # Collision only on ground
+                self.is_game_over = True
+                self.game_over_time = pygame.time.get_ticks()
+                self.sound_manager.play_sound('dinosaur_roar')
+                self.sound_manager.play_sound('game_over_sound')
         
         elif self.time_era == "future":
             # Check energy orb collection
@@ -1033,10 +1444,184 @@ class VisualRocketGame:
                     distance = abs(self.player_x - orb_x)
                     if distance < 30:  # Close enough to collect
                         self.collected_energy = i + 1
+                        self.sound_manager.play_sound('collect_sound')
+            
+            # Check collision with robot (only if player is on ground)
+            robot_distance = abs(self.player_x - self.robot_x)
+            if robot_distance < 50 and not self.is_jumping:  # Collision only on ground
+                self.is_game_over = True
+                self.game_over_time = pygame.time.get_ticks()
+                self.sound_manager.play_sound('robot_beep')
+                self.sound_manager.play_sound('game_over_sound')
         
-        # Move dinosaur and robot slightly for animation
-        self.dinosaur_x += math.sin(pygame.time.get_ticks() * 0.002) * 0.5
-        self.robot_x += math.sin(pygame.time.get_ticks() * 0.003) * 0.3
+        # Enhanced AI movement for dinosaur and robot
+        dt = 1.0 / 60.0  # Assume 60 FPS
+        
+        if self.time_era == "past":
+            # Dinosaur AI - Aggressive predator that always chases player
+            
+            # Always move toward player - no stuck detection needed
+            player_dist = abs(self.dinosaur_x - self.player_x)
+            
+            # Determine direction to player
+            if self.player_x > self.dinosaur_x:
+                target_direction = 1  # Move right
+            elif self.player_x < self.dinosaur_x:
+                target_direction = -1  # Move left
+            else:
+                target_direction = self.dinosaur_direction  # Keep current direction if same position
+            
+            # Set movement speed based on distance to player (reduced to 1/3 speed)
+            if player_dist > 300:
+                # Player is far - sprint to catch up
+                move_speed = random.uniform(1.3, 2.0)  # Was 4.0-6.0
+            elif player_dist > 100:
+                # Player is medium distance - chase actively
+                move_speed = random.uniform(1.0, 1.7)  # Was 3.0-5.0
+            else:
+                # Player is close - aggressive pursuit
+                move_speed = random.uniform(0.8, 1.5)  # Was 2.5-4.5
+            
+            # Move dinosaur toward player
+            self.dinosaur_x += target_direction * move_speed
+            
+            # Add aggressive hunting behavior - occasional quick lunges (reduced)
+            if random.random() < 0.05:  # 5% chance for a lunge
+                lunge_distance = random.uniform(7, 13)  # Was 20-40, now 1/3 speed
+                self.dinosaur_x += target_direction * lunge_distance
+            
+            # Add some unpredictable movement (reduced)
+            if random.random() < 0.1:  # 10% chance for random movement
+                self.dinosaur_x += random.uniform(-3, 3)  # Was -10,10, now 1/3 speed
+            
+            # Keep dinosaur on screen but allow more aggressive edge behavior
+            if self.dinosaur_x < 30:
+                self.dinosaur_x = 35
+            elif self.dinosaur_x > SCREEN_WIDTH - 30:
+                self.dinosaur_x = SCREEN_WIDTH - 35
+            
+            # Update direction for next frame
+            self.dinosaur_direction = target_direction
+        
+        elif self.time_era == "future":
+            # Robot AI - improved to avoid getting stuck
+            orb_positions = [350, 550, 750]
+            target_x = self.player_x  # Default target is player
+            
+            # Find closest uncollected orb
+            closest_orb_dist = float('inf')
+            closest_orb_x = None
+            
+            for i, orb_x in enumerate(orb_positions):
+                if i >= self.collected_energy:  # Orb not collected
+                    orb_dist = abs(self.robot_x - orb_x)
+                    if orb_dist < closest_orb_dist:
+                        closest_orb_dist = orb_dist
+                        closest_orb_x = orb_x
+            
+            # Robot decision: intercept player near orbs or chase directly
+            player_dist = abs(self.robot_x - self.player_x)
+            if (closest_orb_x is not None and 
+                abs(closest_orb_x - self.player_x) < 100 and  # Player near orb
+                closest_orb_dist < 200):  # Robot can reach orb
+                target_x = closest_orb_x  # Intercept at orb
+            else:
+                target_x = self.player_x  # Direct chase
+            
+            # Move robot toward target with improved logic
+            distance_to_target = abs(target_x - self.robot_x)
+            
+            if distance_to_target > 3:  # Only move if not too close
+                move_speed = random.uniform(2.0, 4.0)  # Increased and variable speed
+                if target_x > self.robot_x:
+                    self.robot_x += move_speed
+                elif target_x < self.robot_x:
+                    self.robot_x -= move_speed
+            
+            # Add systematic patrol behavior when far from target
+            if distance_to_target > 200:
+                patrol_movement = 10 * math.sin(pygame.time.get_ticks() * 0.01)
+                self.robot_x += patrol_movement
+            
+            # Keep robot on screen
+            self.robot_x = max(50, min(SCREEN_WIDTH - 50, self.robot_x))
+        
+        # Handle jumping physics with horizontal movement
+        ground_level = SCREEN_HEIGHT - 120
+        if self.is_jumping:
+            # Apply gravity and update jump
+            current_time = pygame.time.get_ticks()
+            jump_duration = current_time - self.jump_start_time
+            
+            # Simple parabolic jump (peak at 0.3 seconds)
+            if jump_duration < 600:  # 0.6 second jump duration
+                t = jump_duration / 600.0  # Normalize to 0-1
+                # Parabolic arc: height = 4 * jump_height * t * (1 - t)
+                jump_height = 220  # Even higher jump (increased from 180)
+                current_jump_offset = 4 * jump_height * t * (1 - t)
+                self.player_y = ground_level - current_jump_offset
+                
+                # Horizontal movement during jump (moves forward automatically)
+                jump_distance = 450  # 3x farther jump (150 * 3 = 450)
+                horizontal_progress = jump_distance * t  # Linear horizontal movement
+                self.player_x = self.jump_start_x + horizontal_progress
+                
+                # Keep player on screen during jump
+                self.player_x = max(50, min(SCREEN_WIDTH - 50, self.player_x))
+            else:
+                # Jump finished, return to ground
+                self.is_jumping = False
+                self.player_y = ground_level
+        else:
+            self.player_y = ground_level
+    
+    def restart_game(self):
+        """Restart the entire game from the beginning"""
+        # Reset to menu state
+        self.state = "menu"
+        
+        # Reset rocket simulation variables
+        self.rocket_sprite = None
+        self.simulation = None
+        self.sim_time = 0
+        self.trajectory_points = []
+        
+        # Reset landing variables
+        self.landing_position = None
+        self.landing_time = 0
+        self.show_landing_marker = False
+        
+        # Reset baseball game variables
+        self.baseball_angle = 45
+        self.baseball_power = 0.5
+        self.baseball_attempts = 0
+        self.rocket_tree_x = 0
+        self.rocket_tree_height = 6
+        
+        # Reset time travel variables
+        self.time_era = "present"
+        self.time_power = 0.5
+        self.collected_crystals = 0
+        self.collected_energy = 0
+        self.player_x = 200
+        self.dinosaur_x = SCREEN_WIDTH - 200
+        self.robot_x = SCREEN_WIDTH - 300
+        self.dinosaur_direction = random.choice([-1, 1])
+        self.dinosaur_stuck_counter = 0
+        self.dinosaur_last_x = self.dinosaur_x
+        self.is_game_over = False
+        self.player_y = SCREEN_HEIGHT - 120
+        self.is_jumping = False
+        self.jump_velocity = 0
+        self.jump_start_x = 0
+        
+        # Reset sound flags
+        self._launch_sound_played = False
+        self._prev_countdown_second = 0
+        
+        # Randomize wind for new game
+        self.wind_speed = random.uniform(0.5, 8.0)
+        self.wind_direction = random.randint(0, 23) * 15
     
     def animate_rocket_falling(self):
         """Show rocket falling from tree after being hit"""
