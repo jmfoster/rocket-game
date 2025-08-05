@@ -783,13 +783,13 @@ class VisualRocketGame:
             if self.simulation:
                 landing_zone = self.simulation.check_landing_location()
                 
-                if landing_zone == "trees" and current_pos[1] <= 6.1:  # Small buffer for tree height
+                if landing_zone == "trees" and current_pos[1] <= 8.0:  # Larger buffer for tree height detection
                     # Rocket is in trees and at/below tree height - clamp to tree height (make it more visible)
-                    tree_screen_y = ground_level - 30  # Fixed 30 pixels above ground for visibility
+                    tree_screen_y = ground_level - 78  # Match the visual tree height (6m * 13 pixels/meter = 78 pixels)
                     screen_y = tree_screen_y
-                else:
-                    # Normal altitude or field landing - clamp to ground
-                    screen_y = min(screen_y, ground_level)
+                elif current_pos[1] <= 0:  # Only clamp to ground if rocket has actually hit ground
+                    # Field landing or rocket at ground level - clamp to ground
+                    screen_y = ground_level
             
             # Draw rocket
             if self.rocket_sprite:
@@ -826,29 +826,31 @@ class VisualRocketGame:
         # Draw landing marker if rocket has landed
         if self.show_landing_marker and self.landing_position is not None:
             landing_screen_x = SCREEN_WIDTH // 2 + (self.landing_position[0] - 54.85) * self.scale_factor
-            # Landing marker at ground level
-            landing_screen_y = SCREEN_HEIGHT - 100
+            
+            # Check if landing is in trees or field
+            field_start = 0
+            field_end = 109.7
+            is_in_field = field_start <= self.landing_position[0] <= field_end
+            
+            if is_in_field:
+                # Landing marker at ground level for field landing
+                landing_screen_y = SCREEN_HEIGHT - 100
+            else:
+                # Landing marker at tree height for tree landing
+                landing_screen_y = SCREEN_HEIGHT - 100 - 80  # Match the visual tree height
             
             # Pulsing landing marker
             pulse = int(20 * (1 + math.sin(pygame.time.get_ticks() * 0.01)))
             pygame.draw.circle(self.screen, RED, (int(landing_screen_x), int(landing_screen_y)), 15 + pulse, 3)
             pygame.draw.circle(self.screen, WHITE, (int(landing_screen_x), int(landing_screen_y)), 5)
             
-            # Landing text and rocket positioning
-            field_start = 0
-            field_end = 109.7
-            is_in_field = field_start <= self.landing_position[0] <= field_end
-            
+            # Landing text positioning
             if is_in_field:
                 landing_text = "LANDED HERE!"
                 text_color = GREEN
-                # Rocket on ground
-                rocket_y_offset = 0
             else:
                 landing_text = "STUCK IN TREES!"
                 text_color = RED
-                # Show rocket slightly above ground (in tree)
-                rocket_y_offset = -30
             
             rendered_text = self.small_font.render(landing_text, True, text_color)
             text_rect = rendered_text.get_rect(center=(int(landing_screen_x), int(landing_screen_y - 40)))
@@ -893,7 +895,7 @@ class VisualRocketGame:
                 phase_color = GREEN
             
             phase_text = self.small_font.render(phase, True, phase_color)
-            self.screen.blit(phase_text, (10, 140))
+            self.screen.blit(phase_text, (SCREEN_WIDTH - 250, 10))
         
         for i, text in enumerate(info_texts):
             rendered = self.small_font.render(text, True, BLACK)
@@ -911,7 +913,7 @@ class VisualRocketGame:
         self.draw_tree(tree_x, ground_y)
         
         # Draw stuck rocket in tree at proper height
-        rocket_screen_height = ground_y - self.rocket_tree_height * 10  # Convert meters to pixels
+        rocket_screen_height = ground_y - self.rocket_tree_height * 13  # Convert meters to pixels (increased multiplier for better visibility)
         stuck_rocket = RocketSprite(tree_x + 10, rocket_screen_height)
         stuck_rocket.scale = 0.8
         stuck_rocket.draw_rocket(self.screen)
@@ -1144,7 +1146,7 @@ class VisualRocketGame:
                     
                     # Check for hit near rocket position
                     rocket_x = SCREEN_WIDTH // 2 + self.rocket_tree_x
-                    rocket_y = SCREEN_HEIGHT - 100 - self.rocket_tree_height * 10
+                    rocket_y = SCREEN_HEIGHT - 100 - self.rocket_tree_height * 13  # Match the visual height
                     
                     distance = math.sqrt((x - rocket_x)**2 + (y - rocket_y)**2)
                     if distance < 20 and not hit_occurred:
@@ -1630,7 +1632,7 @@ class VisualRocketGame:
         tree_x = SCREEN_WIDTH // 2 + self.rocket_tree_x
         
         # Starting position in tree
-        start_y = ground_y - self.rocket_tree_height * 10
+        start_y = ground_y - self.rocket_tree_height * 13  # Match the visual height
         
         while pygame.time.get_ticks() - start_time < 1500:  # 1.5 second fall
             for event in pygame.event.get():
