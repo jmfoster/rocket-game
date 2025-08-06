@@ -419,6 +419,9 @@ class VisualRocketGame:
         self.time_step = 0.033  # ~30 FPS simulation steps for faster falling
         self.scale_factor = 2.5  # pixels per meter (much bigger field)
         
+        # Manual parachute control
+        self.manual_parachute_triggered = False
+        
         # Countdown variables
         self.countdown_start_time = 0
         self.countdown_duration = 6000  # 6 seconds in milliseconds
@@ -442,6 +445,7 @@ class VisualRocketGame:
         self.max_attempts = 10
         self.rocket_tree_x = 0
         self.rocket_tree_height = 6
+        self.baseball_player_x = 100  # Player position in baseball game
         
         # Animation variables
         self.trajectory_points = []
@@ -466,6 +470,14 @@ class VisualRocketGame:
         self.is_jumping = False
         self.jump_start_time = 0
         self.jump_start_x = 0  # Starting X position for jump
+        
+        # Creature movement controls
+        self.dinosaur_movement_enabled = False
+        self.robot_movement_enabled = False
+        
+        # Win condition variables
+        self.player_won = False
+        self.win_start_time = 0
         
     def draw_background(self):
         # Sky gradient
@@ -772,24 +784,29 @@ class VisualRocketGame:
             vertical_scale = 0.8  # Much smaller scale for altitude to keep rocket on screen
             
             screen_x = SCREEN_WIDTH // 2 + (current_pos[0] - 54.85) * horizontal_scale
-            screen_y = ground_level - current_pos[1] * vertical_scale
             
-            # Keep rocket on screen - if it goes too high, scale it down more
-            if screen_y < 50:  # Too high
-                vertical_scale = 0.3
-                screen_y = ground_level - current_pos[1] * vertical_scale
-            
-            # Don't let rocket go below appropriate landing surface
+            # Check landing status first to determine proper visual height
             if self.simulation:
                 landing_zone = self.simulation.check_landing_location()
                 
-                if landing_zone == "trees" and current_pos[1] <= 8.0:  # Larger buffer for tree height detection
-                    # Rocket is in trees and at/below tree height - clamp to tree height (make it more visible)
-                    tree_screen_y = ground_level - 78  # Match the visual tree height (6m * 13 pixels/meter = 78 pixels)
-                    screen_y = tree_screen_y
-                elif current_pos[1] <= 0:  # Only clamp to ground if rocket has actually hit ground
-                    # Field landing or rocket at ground level - clamp to ground
-                    screen_y = ground_level
+                # If rocket has landed, use fixed visual positions
+                if self.show_landing_marker:
+                    if landing_zone == "trees":
+                        # Rocket is stuck in trees - show at tree height
+                        screen_y = ground_level - 60  # Tree height visual position
+                    else:
+                        # Rocket landed on field - show at ground level
+                        screen_y = ground_level
+                else:
+                    # Rocket is still flying - use physics position
+                    screen_y = ground_level - current_pos[1] * vertical_scale
+                    
+                    # Keep rocket on screen - if it goes too high, scale it down more
+                    if screen_y < 50:  # Too high
+                        vertical_scale = 0.3
+                        screen_y = ground_level - current_pos[1] * vertical_scale
+            else:
+                screen_y = ground_level - current_pos[1] * vertical_scale
             
             # Draw rocket
             if self.rocket_sprite:
@@ -801,10 +818,8 @@ class VisualRocketGame:
                 if (engine_burning and not self.rocket_sprite.parachute_deployed):
                     self.rocket_sprite.add_exhaust_particle(engine_burning)
                 
-                # Deploy parachute
-                if (self.sim_time > self.simulation.engine.burn_time + self.simulation.engine.delay and
-                    len(self.simulation.velocity_history) > 0 and
-                    self.simulation.velocity_history[-1][1] <= 0):
+                # Deploy parachute (only if manually triggered or automatic fallback)
+                if self.simulation.rocket.parachute_deployed:
                     if not self.rocket_sprite.parachute_deployed:
                         self.sound_manager.play_sound('parachute_deploy')
                     self.rocket_sprite.parachute_deployed = True
@@ -814,10 +829,12 @@ class VisualRocketGame:
                 self.rocket_sprite.draw_rocket(self.screen)
                 self.rocket_sprite.draw_parachute(self.screen)
             
-            # Simple trajectory trail
-            self.trajectory_points.append((screen_x, screen_y))
-            if len(self.trajectory_points) > 100:
-                self.trajectory_points.pop(0)
+            # Simple trajectory trail (only add points if rocket is still moving)
+            if (len(self.simulation.velocity_history) == 0 or 
+                np.linalg.norm(self.simulation.velocity_history[-1]) > 0.1):  # Only if moving
+                self.trajectory_points.append((screen_x, screen_y))
+                if len(self.trajectory_points) > 100:
+                    self.trajectory_points.pop(0)
             
             # Draw trajectory trail
             if len(self.trajectory_points) > 1:
@@ -864,6 +881,11 @@ class VisualRocketGame:
             f"Engine: {self.selected_engine}",
             f"Wind: {self.wind_speed:.1f} m/s"
         ]
+        
+        # Add parachute deployment instructions
+        if (not self.simulation.rocket.parachute_deployed and 
+            self.sim_time > self.simulation.engine.burn_time):
+            info_texts.append("Press SPACE to deploy parachute!")
         
         if self.simulation and len(self.simulation.position_history) > 0:
             current_pos = self.simulation.position_history[-1]
@@ -918,8 +940,8 @@ class VisualRocketGame:
         stuck_rocket.scale = 0.8
         stuck_rocket.draw_rocket(self.screen)
         
-        # Player position (stick figure)
-        player_x = 100
+        # Player position (stick figure) - now moveable
+        player_x = self.baseball_player_x
         player_y = ground_y - 20
         # Draw simple stick figure player
         pygame.draw.circle(self.screen, (255, 220, 177), (player_x, player_y - 10), 8)  # Head
@@ -942,6 +964,7 @@ class VisualRocketGame:
             f"Attempts: {self.baseball_attempts}/{self.max_attempts}",
             f"Angle: {self.baseball_angle:.0f}° (UP/DOWN arrows)",
             f"Power: {self.baseball_power:.2f} (LEFT/RIGHT arrows)",
+            "A/D keys: Move left/right",
             "Press SPACE to throw!"
         ]
         
@@ -949,9 +972,11 @@ class VisualRocketGame:
             rendered = self.small_font.render(text, True, BLACK)
             self.screen.blit(rendered, (50, 100 + i * 30))
         
-        # Distance indicator
-        distance = abs(self.rocket_tree_x)
-        dist_text = self.small_font.render(f"Distance to rocket: {distance:.0f}m", True, RED)
+        # Distance indicator - calculate from player position to tree
+        tree_screen_x = SCREEN_WIDTH // 2 + self.rocket_tree_x
+        distance_pixels = abs(tree_screen_x - self.baseball_player_x)
+        distance_meters = distance_pixels / 10  # Rough conversion to meters for display
+        dist_text = self.small_font.render(f"Distance to rocket: {distance_meters:.0f}m", True, RED)
         self.screen.blit(dist_text, (50, 250))
     
     def draw_time_travel_game(self):
@@ -1070,6 +1095,8 @@ class VisualRocketGame:
             "UP/DOWN: Choose era",
             f"Crystals: {self.collected_crystals}/3" if self.time_era == "past" else f"Energy: {self.collected_energy}/3" if self.time_era == "future" else "WASD: Move around",
             "E or SPACE: Jump over creatures to avoid collision",
+            "Press 4 or 5: Start creature movement",
+            "Collect all items and jump into time machine to win!",
             "Press R to return to rocket game"
         ]
         
@@ -1077,6 +1104,33 @@ class VisualRocketGame:
         for i, text in enumerate(info_texts):
             rendered = self.small_font.render(text, True, text_color)
             self.screen.blit(rendered, (50, 100 + i * 30))
+        
+        # Win condition overlay
+        if self.player_won:
+            # Check if player reached time machine
+            time_machine_distance = abs(self.player_x - self.time_machine_x)
+            if time_machine_distance < 60:  # Player reached time machine
+                # Dark overlay
+                overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+                overlay.fill(BLACK)
+                overlay.set_alpha(150)
+                self.screen.blit(overlay, (0, 0))
+                
+                # YOU WIN text with pulsing effect
+                pulse = 1.0 + 0.3 * math.sin(pygame.time.get_ticks() * 0.01)
+                font_size = int(120 * pulse)
+                big_font = pygame.font.Font(None, font_size)
+                
+                win_text = big_font.render("YOU WIN!!!", True, GOLD)
+                win_rect = win_text.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2))
+                self.screen.blit(win_text, win_rect)
+                
+                # Restart message
+                restart_text = self.small_font.render("Press ENTER to return to main menu", True, WHITE)
+                restart_rect = restart_text.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + 80))
+                self.screen.blit(restart_text, restart_rect)
+                
+                return  # Don't draw game over overlay
         
         # Game over overlay
         if self.is_game_over:
@@ -1128,7 +1182,7 @@ class VisualRocketGame:
             # Animate baseball
             t = (pygame.time.get_ticks() - start_time) / 2000.0
             if t <= 1.0:
-                player_x = 100
+                player_x = self.baseball_player_x
                 player_y = SCREEN_HEIGHT - 120
                 
                 # Calculate trajectory
@@ -1189,6 +1243,9 @@ class VisualRocketGame:
         self._launch_sound_played = False
         self._prev_countdown_second = 0
         
+        # Reset manual parachute control
+        self.manual_parachute_triggered = False
+        
         # Reset landing variables
         self.landing_position = None
         self.landing_time = 0
@@ -1204,24 +1261,25 @@ class VisualRocketGame:
             # Run one physics step
             time = self.sim_time
             
-            # Check for parachute deployment
-            if (not self.simulation.rocket.parachute_deployed and 
-                time > self.simulation.engine.burn_time + self.simulation.engine.delay and
-                len(self.simulation.velocity_history) > 0 and
-                self.simulation.velocity_history[-1][1] <= 0):
-                self.simulation.rocket.parachute_deployed = True
-                self.simulation.rocket.flight_phase = "descent"
+            # Parachute deployment is now manual only (handled in event handler)
+            # No automatic deployment - player must press spacebar
             
             # Calculate forces
             thrust = self.simulation.thrust_force(time)
             drag = self.simulation.drag_force(self.simulation.rocket.velocity)
             gravity = np.array([0.0, -self.simulation.rocket.mass * self.simulation.g])
             
-            # Add minimal wind force during parachute descent (horizontal only)
+            # Add wind force throughout flight (horizontal only)
             wind_force = np.array([0.0, 0.0])
-            if self.simulation.rocket.parachute_deployed:
-                # Very gentle horizontal wind push
+            if time <= self.simulation.engine.burn_time:
+                # Light wind during powered flight
+                wind_force = np.array([self.simulation.wind_vector[0] * 0.02, 0.0])
+            elif self.simulation.rocket.parachute_deployed:
+                # Stronger wind force during parachute descent
                 wind_force = np.array([self.simulation.wind_vector[0] * 0.05, 0.0])
+            else:
+                # Medium wind force during unpowered flight (no parachute)
+                wind_force = np.array([self.simulation.wind_vector[0] * 0.03, 0.0])
             
             # Safety check for mass
             if self.simulation.rocket.mass <= 0:
@@ -1259,7 +1317,7 @@ class VisualRocketGame:
             if self.simulation.rocket.position[1] <= landing_altitude:
                 # Stop rocket at appropriate height
                 self.simulation.rocket.position[1] = landing_altitude
-                self.simulation.rocket.velocity[1] = 0  # Stop falling
+                self.simulation.rocket.velocity = np.array([0.0, 0.0])  # Stop all movement (horizontal and vertical)
                 
                 # Record landing position and show marker (only once)
                 if not self.show_landing_marker:
@@ -1272,9 +1330,15 @@ class VisualRocketGame:
                     # Wait 2 seconds to show tree landing, then go to recovery
                     if self.sim_time - self.landing_time > 2.0:
                         self.state = "recovery"
-                        self.rocket_tree_x = self.simulation.rocket.position[0] - 54.85
+                        # Keep tree visible on screen by clamping position
+                        raw_tree_x = self.simulation.rocket.position[0] - 54.85
+                        # Clamp tree position to keep it between 200 pixels from edges
+                        max_tree_offset = (SCREEN_WIDTH // 2) - 200
+                        min_tree_offset = -(SCREEN_WIDTH // 2) + 200
+                        self.rocket_tree_x = max(min_tree_offset, min(max_tree_offset, raw_tree_x))
                         self.rocket_tree_height = tree_height
                         self.baseball_attempts = 0
+                        self.baseball_player_x = 100  # Reset player position for baseball game
                         return  # Stop simulation updates
                 else:
                     # Wait 3 seconds to show successful field landing
@@ -1330,6 +1394,17 @@ class VisualRocketGame:
                     elif event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
                         return False  # Quit game
                 
+                elif self.state == "flying":
+                    if event.key == pygame.K_SPACE:
+                        # Manual parachute deployment
+                        if (not self.manual_parachute_triggered and 
+                            not self.simulation.rocket.parachute_deployed and
+                            self.sim_time > self.simulation.engine.burn_time):  # Only after engine burn
+                            self.manual_parachute_triggered = True
+                            self.simulation.rocket.parachute_deployed = True
+                            self.simulation.rocket.flight_phase = "descent"
+                            self.sound_manager.play_sound('parachute_deploy')
+                
                 elif self.state == "recovery":
                     if event.key == pygame.K_UP:
                         self.baseball_angle = min(90, self.baseball_angle + 5)
@@ -1339,11 +1414,23 @@ class VisualRocketGame:
                         self.baseball_power = max(0.1, self.baseball_power - 0.05)
                     elif event.key == pygame.K_RIGHT:
                         self.baseball_power = min(1.0, self.baseball_power + 0.05)
+                    elif event.key == pygame.K_a:
+                        # Move player left
+                        self.baseball_player_x = max(50, self.baseball_player_x - 20)
+                    elif event.key == pygame.K_d:
+                        # Move player right
+                        self.baseball_player_x = min(SCREEN_WIDTH - 50, self.baseball_player_x + 20)
                     elif event.key == pygame.K_SPACE:
                         self.throw_baseball()
                 
                 elif self.state == "time_travel":
-                    if self.is_game_over:
+                    if self.player_won:
+                        # Player won - wait for Enter key to restart
+                        if event.key == pygame.K_RETURN:
+                            # Restart entire game to menu
+                            self.restart_game()
+                            self.sound_manager.play_sound('menu_click')
+                    elif self.is_game_over:
                         # Only allow restart when game over
                         if event.key == pygame.K_SPACE:
                             # Restart entire game to menu
@@ -1384,6 +1471,12 @@ class VisualRocketGame:
                                 self.jump_start_time = pygame.time.get_ticks()
                                 self.jump_start_x = self.player_x  # Record starting position
                                 self.sound_manager.play_sound('menu_click')  # Jump sound
+                        elif event.key == pygame.K_4 or event.key == pygame.K_5:
+                            # Start creature movement for current era (either key works)
+                            if self.time_era == "past":
+                                self.dinosaur_movement_enabled = True
+                            elif self.time_era == "future":
+                                self.robot_movement_enabled = True
                         elif event.key == pygame.K_r:
                             self.state = "results"
                 
@@ -1429,10 +1522,15 @@ class VisualRocketGame:
                     if distance < 30:  # Close enough to collect
                         self.collected_crystals = i + 1
                         self.sound_manager.play_sound('collect_sound')
+                        
+                        # Check if all crystals collected
+                        if self.collected_crystals >= 3:
+                            self.player_won = True
+                            self.win_start_time = pygame.time.get_ticks()
             
-            # Check collision with dinosaur (only if player is on ground)
+            # Check collision with dinosaur (only if player is on ground and hasn't won)
             dino_distance = abs(self.player_x - self.dinosaur_x)
-            if dino_distance < 50 and not self.is_jumping:  # Collision only on ground
+            if dino_distance < 50 and not self.is_jumping and not self.player_won:  # Collision only on ground and if not won
                 self.is_game_over = True
                 self.game_over_time = pygame.time.get_ticks()
                 self.sound_manager.play_sound('dinosaur_roar')
@@ -1447,10 +1545,15 @@ class VisualRocketGame:
                     if distance < 30:  # Close enough to collect
                         self.collected_energy = i + 1
                         self.sound_manager.play_sound('collect_sound')
+                        
+                        # Check if all energy orbs collected
+                        if self.collected_energy >= 3:
+                            self.player_won = True
+                            self.win_start_time = pygame.time.get_ticks()
             
-            # Check collision with robot (only if player is on ground)
+            # Check collision with robot (only if player is on ground and hasn't won)
             robot_distance = abs(self.player_x - self.robot_x)
-            if robot_distance < 50 and not self.is_jumping:  # Collision only on ground
+            if robot_distance < 50 and not self.is_jumping and not self.player_won:  # Collision only on ground and if not won
                 self.is_game_over = True
                 self.game_over_time = pygame.time.get_ticks()
                 self.sound_manager.play_sound('robot_beep')
@@ -1459,7 +1562,7 @@ class VisualRocketGame:
         # Enhanced AI movement for dinosaur and robot
         dt = 1.0 / 60.0  # Assume 60 FPS
         
-        if self.time_era == "past":
+        if self.time_era == "past" and self.dinosaur_movement_enabled:
             # Dinosaur AI - Aggressive predator that always chases player
             
             # Always move toward player - no stuck detection needed
@@ -1505,7 +1608,7 @@ class VisualRocketGame:
             # Update direction for next frame
             self.dinosaur_direction = target_direction
         
-        elif self.time_era == "future":
+        elif self.time_era == "future" and self.robot_movement_enabled:
             # Robot AI - improved to avoid getting stuck
             orb_positions = [350, 550, 750]
             target_x = self.player_x  # Default target is player
@@ -1563,9 +1666,20 @@ class VisualRocketGame:
                 current_jump_offset = 4 * jump_height * t * (1 - t)
                 self.player_y = ground_level - current_jump_offset
                 
-                # Horizontal movement during jump (moves forward automatically)
+                # Horizontal movement during jump 
                 jump_distance = 450  # 3x farther jump (150 * 3 = 450)
-                horizontal_progress = jump_distance * t  # Linear horizontal movement
+                
+                # If player won, jump towards time machine, otherwise jump forward
+                if self.player_won:
+                    # Jump towards time machine (calculate distance and direction)
+                    distance_to_machine = self.time_machine_x - self.jump_start_x
+                    # Limit jump distance to not overshoot too much
+                    clamped_distance = max(-jump_distance, min(jump_distance, distance_to_machine))
+                    horizontal_progress = clamped_distance * t
+                else:
+                    # Normal forward jump
+                    horizontal_progress = jump_distance * t
+                    
                 self.player_x = self.jump_start_x + horizontal_progress
                 
                 # Keep player on screen during jump
@@ -1599,6 +1713,7 @@ class VisualRocketGame:
         self.baseball_attempts = 0
         self.rocket_tree_x = 0
         self.rocket_tree_height = 6
+        self.baseball_player_x = 100
         
         # Reset time travel variables
         self.time_era = "present"
@@ -1616,6 +1731,14 @@ class VisualRocketGame:
         self.is_jumping = False
         self.jump_velocity = 0
         self.jump_start_x = 0
+        
+        # Reset creature movement controls
+        self.dinosaur_movement_enabled = False
+        self.robot_movement_enabled = False
+        
+        # Reset win condition
+        self.player_won = False
+        self.win_start_time = 0
         
         # Reset sound flags
         self._launch_sound_played = False
@@ -1645,8 +1768,8 @@ class VisualRocketGame:
             # Draw trees with NO stuck rocket
             self.draw_tree(tree_x, ground_y)
             
-            # Draw player
-            player_x = 100
+            # Draw player at current position
+            player_x = self.baseball_player_x
             player_y = ground_y - 20
             pygame.draw.circle(self.screen, (255, 220, 177), (player_x, player_y - 10), 8)  # Head
             pygame.draw.line(self.screen, BLACK, (player_x, player_y - 2), (player_x, player_y + 15), 3)  # Body
